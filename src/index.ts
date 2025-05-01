@@ -279,7 +279,8 @@ async function main() {
   // ──────────────────────────────────────────────────────────────────────────────
   try {
     await server.connect(new StdioServerTransport());
-    console.log("Server connected successfully");
+    // Log to stderr instead of stdout to avoid interfering with JSON communication
+    console.error("Server connected successfully");
   } catch (error) {
     console.error("Failed to connect server:", error);
     process.exit(1);

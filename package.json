@@ -1,6 +1,7 @@
 {
     "name": "limitless-mcp",
-    "version": "0.2.0",
+    "version": "0.2.2",
+    "description": "MCP server for Limitless API - Connect your Pendant data to Claude and other LLMs",
     "type": "module",
     "bin": { "limitless-mcp": "./dist/index.js" },
     "main": "./dist/index.js",
@@ -10,6 +11,21 @@
       "prepare": "npm run build",
       "start": "node dist/index.js"
     },
+    "repository": {
+      "type": "git",
+      "url": "https://github.com/jakerains/limitless-mcp.git"
+    },
+    "keywords": [
+      "limitless",
+      "mcp",
+      "pendant",
+      "claude",
+      "ai",
+      "lifelogs",
+      "model-context-protocol"
+    ],
+    "author": "Jake Rains",
+    "license": "MIT",
     "dependencies": {
       "@modelcontextprotocol/sdk": "^1.11.0",
       "undici": "^6.6.2",
@@ -21,5 +37,6 @@
     },
     "engines": {
       "node": ">=16"
-    }
+    },
+    "private": false
   }
