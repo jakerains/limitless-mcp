@@ -15,6 +15,9 @@ Limitless MCP is a server implementation of the [Model Context Protocol](https:/
 - 🔍 **Search & Explore** your Limitless Lifelogs directly from Claude
 - 📅 **Date Filtering** with timezone support for precise data retrieval
 - 📝 **Daily Summaries** of your Pendant recordings
+- 📄 **Transcript Generation** in multiple formats for easy reading
+- 📊 **Time Analysis** to understand your recording patterns
+- 🔎 **Content Filtering** by speaker, type, or timeframe
 - 🔒 **Secure Authentication** using your Limitless API key
 - 🔄 **Seamless Integration** with Claude Desktop, Cursor, and other MCP-compatible clients
 
@@ -117,9 +120,24 @@ Once configured, you can interact with your Limitless data using natural languag
   Give me a summary of my day on May 1, 2025.
   ```
 
-- **Date filtering**:
+- **Retrieve a full conversation**:
   ```
-  List my lifelogs from last week.
+  Show me the full text of lifelog OFe86CdN11YCe22I9Jv4.
+  ```
+
+- **Generate a transcript**:
+  ```
+  Create a dialogue transcript from lifelog OFe86CdN11YCe22I9Jv4.
+  ```
+
+- **Analyze recording time**:
+  ```
+  Show me a time analysis of my recordings from last week.
+  ```
+
+- **Filter by speaker**:
+  ```
+  Filter lifelog OFe86CdN11YCe22I9Jv4 to only show what Jake said.
   ```
 
 ## 🧰 Available Tools
@@ -133,11 +151,46 @@ Lists your lifelogs with filtering options:
 - `end`: End date/time
 - `direction`: Sort direction ("asc" or "desc")
 
+### `get_paged_lifelogs`
+Navigates through paginated results:
+- `cursor`: Pagination cursor from previous results
+- `limit`: Maximum number of lifelogs to return
+- `date`, `timezone`, `direction`: Same as above
+
 ### `search_lifelogs`
 Searches your lifelogs by text content:
 - `query`: Text to search for
 - `limit`: Maximum number of results to return
 - `date`, `timezone`, `start`, `end`: Same as above
+
+### `get_lifelog`
+Retrieves the full content of a specific lifelog by ID:
+- `id`: The ID of the lifelog to retrieve
+
+### `get_lifelog_metadata`
+Retrieves only metadata about a lifelog (faster than full content):
+- `id`: The ID of the lifelog to retrieve metadata for
+
+### `filter_lifelog_contents`
+Filters lifelog content by various criteria:
+- `id`: The ID of the lifelog to filter
+- `speakerName`: Filter by speaker name
+- `contentType`: Filter by content type (e.g., heading1, blockquote)
+- `timeStart`: Filter content after this time (ISO-8601)
+- `timeEnd`: Filter content before this time (ISO-8601)
+
+### `generate_transcript`
+Creates a formatted transcript from a lifelog:
+- `id`: The ID of the lifelog to generate transcript from
+- `format`: Transcript format style ("simple", "detailed", or "dialogue")
+
+### `get_time_summary`
+Provides time-based analytics of your recordings:
+- `date`: Date in YYYY-MM-DD format
+- `timezone`: IANA timezone specifier
+- `start`: Start date for range analysis
+- `end`: End date for range analysis
+- `groupBy`: How to group statistics ("hour", "day", or "week")
 
 ### `get_day_summary`
 Provides a formatted summary of a specific day's lifelogs:

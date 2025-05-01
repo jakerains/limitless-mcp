@@ -1,8 +1,65 @@
-# Project Map: Limitless MCP
+# Limitless MCP Project Map
 
 ## Overview
+Limitless MCP is a server implementation of the Model Context Protocol (MCP) that provides AI assistants like Claude with access to Limitless API data from a user's Pendant device. The server acts as a bridge between AI systems and personal data collected via the Limitless Pendant.
 
-The Limitless MCP project provides a Model Context Protocol (MCP) server implementation that connects to the Limitless API, allowing AI models like Claude to access Limitless data through the MCP interface.
+## Architecture
+
+### Core Components
+- **MCP Server**: Implements the Model Context Protocol for communication with AI assistants.
+- **Limitless API Client**: Handles authentication and data retrieval from the Limitless API.
+- **Resource System**: Provides virtual resources (files) that Claude can read.
+- **Tool System**: Provides callable functions that Claude can use to query and manipulate data.
+
+### Technical Decisions
+1. Built on TypeScript with ES module support for better type safety and modern JavaScript features.
+2. Uses the official MCP SDK for reliable protocol compatibility.
+3. Communicates over stdio for compatibility with Claude Desktop and other MCP-compatible clients.
+4. Error messages and logs are directed to stderr to avoid interfering with the JSON protocol.
+
+## Resources
+- `lifelogs://{id}` - Virtual resource that returns the markdown content of a lifelog when read.
+
+## Tools
+
+### Data Retrieval Tools
+- `list_lifelogs` - Lists lifelogs with enhanced filtering options (date, timezone, pagination).
+- `get_paged_lifelogs` - Handles pagination for larger result sets via cursor.
+- `search_lifelogs` - Searches lifelogs by text content with date filtering.
+- `get_lifelog` - Retrieves a complete lifelog by ID.
+- `get_lifelog_metadata` - Retrieves only metadata about a lifelog for quicker operations.
+
+### Data Analysis Tools
+- `get_day_summary` - Provides a formatted summary of a specific day's lifelogs.
+- `get_time_summary` - Generates time-based statistics and analysis of lifelogs (counts, durations, etc.).
+
+### Content Processing Tools
+- `filter_lifelog_contents` - Filters lifelog content by speaker, content type, or time range.
+- `generate_transcript` - Creates formatted transcripts in various styles (simple, detailed, dialogue).
+
+## Configuration
+- Reads the Limitless API key from the `LIMITLESS_API_KEY` environment variable.
+- Supports various date formats and timezones for flexible querying.
+- Configurable result limits for tools that return multiple items.
+
+## API Integration
+- Primary endpoint: `https://api.limitless.ai/v1/lifelogs`
+- Authentication via `X-API-Key` header
+- Support for query parameters:
+  - Basic: date, timezone
+  - Advanced: cursor, start/end times, direction, includeMarkdown
+- Individual lifelog retrieval via `/lifelogs/{id}`
+
+## Future Development
+1. Additional endpoints as they become available in the Limitless API
+2. Enhanced caching for frequently accessed data
+3. LLM fine-tuning integration for personalized AI experiences
+4. Real-time notifications of new Pendant recordings
+
+## Version History
+- v0.1.0 - Initial implementation with basic functionality
+- v0.2.x - Enhanced filtering, better error handling, full lifelog retrieval
+- v0.3.0 - Added pagination, transcript generation, content filtering, time analysis, and metadata tools
 
 ## Project Structure
 
@@ -18,56 +75,6 @@ limitless-mcp/
 ├── package.json          # Project metadata and dependencies
 └── tsconfig.json         # TypeScript configuration
 ```
-
-## Core Components
-
-### MCP Server Implementation
-
-The core server logic is implemented in `src/index.ts`. It creates an MCP server with resources and tools for interacting with the Limitless API.
-
-#### Resources
-
-- **lifelogs**: Exposes Limitless Lifelogs as virtual markdown files through the `lifelogs://{id}` URI schema.
-
-#### Tools
-
-- **list_lifelogs**: Lists lifelogs with extensive filtering options:
-  - Limit number of results
-  - Filter by date or date range
-  - Specify timezone
-  - Sort direction
-  - Results include timestamps and pagination support
-
-- **search_lifelogs**: Searches lifelogs for text content with enhanced filtering:
-  - Text search in content and titles
-  - Date filtering
-  - Timezone specification
-  - Results include timestamps
-
-- **get_day_summary**: Creates a formatted summary of a specific day:
-  - Shows all lifelogs for a given date
-  - Formats timestamps according to specified timezone
-  - Provides excerpts of each lifelog
-  - Orders entries chronologically
-
-### API Integration
-
-The server connects to the Limitless API using:
-
-- API Key authentication via the `LIMITLESS_API_KEY` environment variable
-- TypeScript interfaces defining the API response structure
-- Comprehensive error handling and input validation
-- Support for all major API parameters (date filtering, pagination, etc.)
-
-## Technical Decisions
-
-1. **ES Modules**: Implemented as an ES module for modern Node.js compatibility.
-2. **TypeScript**: Used for type safety and better developer experience.
-3. **Error Handling**: Comprehensive error handling for API failures.
-4. **URI Schema**: Simple URI schema (`lifelogs://{id}`) for accessing lifelogs.
-5. **Resource Listing**: Directory listing capability for discovering available lifelogs.
-6. **Parameter Validation**: Using Zod for schema validation with descriptive parameter information.
-7. **Timezone Support**: First-class support for timezone specifications in date handling.
 
 ## Dependencies
 
