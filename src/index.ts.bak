@@ -1,12 +1,10 @@
 #!/usr/bin/env node
 
 import { McpServer, ResourceTemplate, ResourceMetadata } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { McpError, ErrorCode } from './utils/errors';
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { request } from "undici";
 import { z } from "zod";
 import NodeCache from "node-cache";
-import { initializePlugins } from "./plugins/index.js";
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Main function that runs the MCP server
@@ -20,28 +18,10 @@ async function main() {
     process.exit(1);
   }
   
-  // API configuration with defaults
-  const API_BASE_URL = process.env.LIMITLESS_API_BASE_URL || "https://api.limitless.ai/v1";
-  const API_TIMEOUT_MS = parseInt(process.env.LIMITLESS_API_TIMEOUT_MS || "120000", 10); // 2 minutes default
-  const API_MAX_RETRIES = parseInt(process.env.LIMITLESS_API_MAX_RETRIES || "3", 10); // Default to 3 retries
-  
-  // Pagination and result limits
-  const MAX_LIFELOG_LIMIT = parseInt(process.env.LIMITLESS_MAX_LIFELOG_LIMIT || "100", 10); // Max 100 results per request
-  const DEFAULT_PAGE_SIZE = parseInt(process.env.LIMITLESS_DEFAULT_PAGE_SIZE || "10", 10); // Default page size
-  const MAX_SEARCH_MULTIPLIER = parseFloat(process.env.LIMITLESS_SEARCH_MULTIPLIER || "3"); // Default search results multiplier
-  
   // Cache configuration with defaults
   const CACHE_TTL = parseInt(process.env.LIMITLESS_CACHE_TTL || "300", 10); // 5 minutes default
   const CACHE_CHECK_PERIOD = parseInt(process.env.LIMITLESS_CACHE_CHECK_PERIOD || "600", 10); // 10 minutes default
   const CACHE_MAX_KEYS = parseInt(process.env.LIMITLESS_CACHE_MAX_KEYS || "500", 10); // Max 500 entries default
-  
-  // Cache TTL multipliers for different data types
-  const CACHE_TTL_MULTIPLIERS = {
-    METADATA: parseFloat(process.env.CACHE_TTL_METADATA || "3"), // Metadata cached 3x longer by default
-    LISTINGS: parseFloat(process.env.CACHE_TTL_LISTINGS || "2"), // Listings cached 2x longer by default
-    SEARCH: parseFloat(process.env.CACHE_TTL_SEARCH || "1.5"), // Search results cached 1.5x longer by default
-    SUMMARIES: parseFloat(process.env.CACHE_TTL_SUMMARIES || "4") // Summaries cached 4x longer by default (they're expensive to regenerate)
-  };
   
   // Initialize cache
   const cache = new NodeCache({
@@ -51,30 +31,8 @@ async function main() {
     useClones: true
   });
   
-  // Log configuration to stderr for debugging
-  console.error(`
-======================================
-Limitless MCP Server Configuration
-======================================
-API Base URL: ${API_BASE_URL}
-API Timeout: ${API_TIMEOUT_MS}ms
-API Max Retries: ${API_MAX_RETRIES}
-
-Max Results: ${MAX_LIFELOG_LIMIT}
-Default Page Size: ${DEFAULT_PAGE_SIZE}
-Search Multiplier: ${MAX_SEARCH_MULTIPLIER}x
-
-Cache TTL: ${CACHE_TTL}s
-Cache Check Period: ${CACHE_CHECK_PERIOD}s
-Cache Max Keys: ${CACHE_MAX_KEYS}
-
-Cache TTL Multipliers:
-- Metadata: ${CACHE_TTL_MULTIPLIERS.METADATA}x
-- Listings: ${CACHE_TTL_MULTIPLIERS.LISTINGS}x
-- Search: ${CACHE_TTL_MULTIPLIERS.SEARCH}x
-- Summaries: ${CACHE_TTL_MULTIPLIERS.SUMMARIES}x
-======================================
-  `);
+  // Log cache configuration to stderr
+  console.error(`Cache initialized with TTL: ${CACHE_TTL}s, Check period: ${CACHE_CHECK_PERIOD}s, Max keys: ${CACHE_MAX_KEYS}`);
   
   // Cache statistics reporting
   setInterval(() => {
@@ -115,7 +73,7 @@ Cache TTL Multipliers:
     };
   }
 
-  // Function to call the Limitless API with configurable settings
+  const BASE = "https://api.limitless.ai/v1";
   const call = async (path: string, qs: Record<string, unknown> = {}, useCache: boolean = true): Promise<LifelogResponse> => {
     // Build cache key based on path and query params
     const cacheParams = new URLSearchParams();
@@ -148,107 +106,29 @@ Cache TTL Multipliers:
     });
     
     try {
-      // Apply configured timeout and retry logic
-      const requestOptions = {
-        headers: { "X-API-Key": API_KEY },
-        bodyTimeout: API_TIMEOUT_MS,
-        headersTimeout: API_TIMEOUT_MS
-      };
-      
-      // Make the API request with retry logic
-      let response;
-      let retryCount = 0;
-      let lastError;
-      
-      while (retryCount <= API_MAX_RETRIES) {
-        try {
-          if (retryCount > 0) {
-            console.error(`Retry attempt ${retryCount}/${API_MAX_RETRIES} for ${path}`);
-            // Exponential backoff: 1s, 2s, 4s, etc.
-            await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount - 1) * 1000));
-          }
-          
-          response = await request(`${API_BASE_URL}${path}?${params}`, requestOptions);
-          break; // Success - exit retry loop
-        } catch (err: unknown) {
-          lastError = err as Error;
-          
-          // Only retry on network errors or 5xx errors
-          const errWithStatus = err as { statusCode?: number };
-          if (errWithStatus.statusCode && errWithStatus.statusCode < 500) {
-            throw err; // Don't retry client errors (4xx)
-          }
-          
-          retryCount++;
-          if (retryCount > API_MAX_RETRIES) {
-            console.error(`All ${API_MAX_RETRIES} retry attempts failed for ${path}`);
-            throw err;
-          }
-        }
-      }
-      
-      // If we're here without response, throw the last error
-      if (!response) {
-        throw lastError || new Error(`API call failed with no response: ${path}`);
-      }
-      
-      // Check if the response is successful (status code 200-299)
-      if (!response.statusCode || response.statusCode < 200 || response.statusCode >= 300) {
-        throw new Error(`HTTP error: ${response.statusCode}`);
-      }
-      
+      const response = await request(`${BASE}${path}?${params}`, {
+        headers: { "X-API-Key": API_KEY }
+      });
       const data = await response.body.json() as LifelogResponse;
       
       // Store in cache if enabled
       if (useCache) {
         // Calculate custom TTL based on data type
-        // Different data types have different optimal cache durations
+        // Metadata and listings can be cached longer than full content
         let ttl = CACHE_TTL;
-        
-        // Single lifelog metadata (cached longer since they rarely change)
         if (path.includes('/lifelogs/') && !qs.includeMarkdown) {
-          ttl = CACHE_TTL * CACHE_TTL_MULTIPLIERS.METADATA;
-          console.error(`Using metadata TTL multiplier: ${CACHE_TTL_MULTIPLIERS.METADATA}x`);
-        } 
-        // Lifelog listings (cached moderately long)
-        else if (path === '/lifelogs' && data.data.lifelogs && data.data.lifelogs.length > 0) {
-          ttl = CACHE_TTL * CACHE_TTL_MULTIPLIERS.LISTINGS;
-          console.error(`Using listings TTL multiplier: ${CACHE_TTL_MULTIPLIERS.LISTINGS}x`);
-        }
-        // Search results (moderate caching)
-        else if (qs.query) {
-          ttl = CACHE_TTL * CACHE_TTL_MULTIPLIERS.SEARCH;
-          console.error(`Using search TTL multiplier: ${CACHE_TTL_MULTIPLIERS.SEARCH}x`);
+          ttl = CACHE_TTL * 2; // Metadata cached longer
+        } else if (path === '/lifelogs' && data.data.lifelogs && data.data.lifelogs.length > 0) {
+          ttl = CACHE_TTL * 1.5; // Listings cached a bit longer
         }
         
-        // Add tags to the cache entry for better management
-        const tags = [];
-        if (path.includes('/lifelogs/')) {
-          tags.push('single_lifelog');
-          if (qs.includeMarkdown) {
-            tags.push('full_content');
-          } else {
-            tags.push('metadata_only');
-          }
-        } else if (path === '/lifelogs') {
-          tags.push('lifelog_listings');
-          if (qs.date) tags.push(`date:${qs.date}`);
-        }
-        
-        // Store in cache with calculated TTL
         cache.set(cacheKey, data, ttl);
-        console.error(`Cached data for: ${cacheKey} with TTL ${ttl}s (tags: ${tags.join(', ')})`);
+        console.error(`Cached data for: ${cacheKey} with TTL ${ttl}s`);
       }
       
       return data;
-    } catch (error: unknown) {
+    } catch (error) {
       console.error("API call error:", error);
-      
-      // Add status code to the error object for better error handling
-      if (error.response) {
-        error.statusCode = error.response.statusCode;
-      }
-      
       throw error;
     }
   };
@@ -258,7 +138,7 @@ Cache TTL Multipliers:
   // ──────────────────────────────────────────────────────────────────────────────
   const server = new McpServer({
     name: "limitless",
-    version: "0.4.0"
+    version: "0.3.0"
   });
 
   // ──────────────────────────────────────────────────────────────────────────────
@@ -298,178 +178,46 @@ Cache TTL Multipliers:
   server.tool(
     "manage_cache",
     { 
-      action: z.enum(["stats", "clear", "clear_type", "config"]).default("stats").describe("Action to perform on the cache"),
-      type: z.string().optional().describe("Cache type to clear (for clear_type action)")
+      action: z.enum(["stats", "clear"]).default("stats").describe("Action to perform on the cache")
     },
-    async ({ action, type }) => {
-      // Handle different actions
-      switch (action) {
-        case "clear":
-          const keysCount = cache.keys().length;
-          cache.flushAll();
-          return {
-            content: [{
-              type: "text",
-              text: `Cache cleared successfully. ${keysCount} entries removed.`
-            }]
-          };
-          
-        case "clear_type":
-          if (!type) {
-            throw new McpError(
-              ErrorCode.InvalidParams,
-              "Type parameter is required for clear_type action",
-              { action, type }
-            );
-          }
-          
-          // Get all keys
-          const allKeys = cache.keys();
-          
-          // Filter keys that match the specified type
-          const keysToDelete = allKeys.filter(key => {
-            if (type === "full_lifelog" && key.includes('/lifelogs/') && key.includes('includeMarkdown=true')) {
-              return true;
-            } else if (type === "metadata" && key.includes('/lifelogs/') && !key.includes('includeMarkdown=true')) {
-              return true;
-            } else if (type === "listings" && key.startsWith('/lifelogs') && !key.includes('/lifelogs/')) {
-              return true;
-            } else if (type === "search" && key.includes('query=')) {
-              return true;
-            } else if (key.includes(type)) {
-              // Generic matching based on substring
-              return true;
-            }
-            return false;
-          });
-          
-          // Delete the matched keys
-          keysToDelete.forEach(key => cache.del(key));
-          
-          return {
-            content: [{
-              type: "text",
-              text: `Selectively cleared ${keysToDelete.length} cache entries of type '${type}'.\n\n` +
-                    `Valid types include: full_lifelog, metadata, listings, search, or any custom substring.`
-            }]
-          };
-          
-        case "config":
-          // Show current cache configuration
-          return {
-            content: [{
-              type: "text",
-              text: `# Cache Configuration\n\n` +
-                    `## API Configuration\n` +
-                    `- **API Base URL**: ${API_BASE_URL}\n` +
-                    `- **API Timeout**: ${API_TIMEOUT_MS}ms (${API_TIMEOUT_MS / 1000} seconds)\n` +
-                    `- **Max Retries**: ${API_MAX_RETRIES}\n\n` +
-                    `## Pagination & Limits\n` +
-                    `- **Max Results**: ${MAX_LIFELOG_LIMIT}\n` +
-                    `- **Default Page Size**: ${DEFAULT_PAGE_SIZE}\n` +
-                    `- **Search Multiplier**: ${MAX_SEARCH_MULTIPLIER}x\n\n` +
-                    `## Cache Settings\n` +
-                    `- **TTL**: ${CACHE_TTL}s (${CACHE_TTL / 60} minutes)\n` +
-                    `- **Check Period**: ${CACHE_CHECK_PERIOD}s (${CACHE_CHECK_PERIOD / 60} minutes)\n` +
-                    `- **Max Keys**: ${CACHE_MAX_KEYS}\n\n` +
-                    `## TTL Multipliers\n` +
-                    `- **Metadata**: ${CACHE_TTL_MULTIPLIERS.METADATA}x (${CACHE_TTL * CACHE_TTL_MULTIPLIERS.METADATA}s)\n` +
-                    `- **Listings**: ${CACHE_TTL_MULTIPLIERS.LISTINGS}x (${CACHE_TTL * CACHE_TTL_MULTIPLIERS.LISTINGS}s)\n` +
-                    `- **Search**: ${CACHE_TTL_MULTIPLIERS.SEARCH}x (${CACHE_TTL * CACHE_TTL_MULTIPLIERS.SEARCH}s)\n` +
-                    `- **Summaries**: ${CACHE_TTL_MULTIPLIERS.SUMMARIES}x (${CACHE_TTL * CACHE_TTL_MULTIPLIERS.SUMMARIES}s)\n\n` +
-                    `These settings can be configured via the following environment variables:\n` +
-                    `- LIMITLESS_API_KEY (required)\n` +
-                    `- LIMITLESS_API_BASE_URL\n` +
-                    `- LIMITLESS_API_TIMEOUT_MS\n` +
-                    `- LIMITLESS_API_MAX_RETRIES\n` +
-                    `- LIMITLESS_MAX_LIFELOG_LIMIT\n` +
-                    `- LIMITLESS_DEFAULT_PAGE_SIZE\n` +
-                    `- LIMITLESS_SEARCH_MULTIPLIER\n` +
-                    `- LIMITLESS_CACHE_TTL\n` +
-                    `- LIMITLESS_CACHE_CHECK_PERIOD\n` +
-                    `- LIMITLESS_CACHE_MAX_KEYS\n` +
-                    `- CACHE_TTL_METADATA\n` +
-                    `- CACHE_TTL_LISTINGS\n` +
-                    `- CACHE_TTL_SEARCH\n` +
-                    `- CACHE_TTL_SUMMARIES`
-            }]
-          };
-          
-        case "stats":
-        default:
-          const stats = cache.getStats();
-          const keys = cache.keys();
-          
-          // Enhanced type detection
-          const keysByType = keys.reduce((acc: Record<string, number>, key: string) => {
-            let type;
-            if (key.includes('/lifelogs/')) {
-              if (key.includes('includeMarkdown=true')) {
-                type = 'full_lifelog';
-              } else {
-                type = 'lifelog_metadata';
-              }
-            } else if (key.startsWith('/lifelogs')) {
-              if (key.includes('date=')) {
-                type = 'date_filtered_listings';
-              } else {
-                type = 'lifelog_listings';
-              }
-            } else if (key.includes('query=')) {
-              type = 'search_results';
-            } else {
-              type = 'other';
-            }
-            
-            acc[type] = (acc[type] || 0) + 1;
-            return acc;
-          }, {});
-          
-          // Calculate hit ratio and cache efficiency metrics
-          const hitRatio = stats.hits + stats.misses > 0 
-            ? ((stats.hits / (stats.hits + stats.misses)) * 100).toFixed(2)
-            : "0.00";
-            
-          // Calculate average key age if possible (not directly supported by NodeCache)
-          const keysSample = keys.slice(0, Math.min(keys.length, 10));
-          const keyAges = keysSample.map(key => {
-            const ttl = cache.getTtl(key);
-            if (ttl) {
-              return Math.round((ttl - Date.now()) / 1000);
-            }
-            return 0;
-          }).filter(age => age > 0);
-          
-          const avgAge = keyAges.length > 0 
-            ? (keyAges.reduce((sum, age) => sum + age, 0) / keyAges.length).toFixed(0)
-            : "unknown";
-            
-          // Enhanced stats output
-          return {
-            content: [{
-              type: "text",
-              text: `# Cache Statistics\n\n` +
-                    `## Performance Metrics\n` +
-                    `- **Total Keys**: ${stats.keys}\n` +
-                    `- **Hits**: ${stats.hits}\n` +
-                    `- **Misses**: ${stats.misses}\n` +
-                    `- **Hit Ratio**: ${hitRatio}%\n` +
-                    `- **Avg. TTL Remaining**: ${avgAge !== "unknown" ? `~${avgAge}s` : "unknown"}\n\n` +
-                    `## Cache Composition\n` +
-                    Object.entries(keysByType)
-                      .sort(([_, a], [__, b]) => b - a) // Sort by count (highest first)
-                      .map(([type, count]) => {
-                        const percentage = ((count / stats.keys) * 100).toFixed(1);
-                        return `- **${type}**: ${count} (${percentage}%)`;
-                      })
-                      .join('\n') +
-                    `\n\n## Available Actions\n` +
-                    `- **stats**: Show these statistics\n` +
-                    `- **clear**: Clear entire cache\n` +
-                    `- **clear_type**: Clear specific type of cached data (requires 'type' parameter)\n` +
-                    `- **config**: Show cache configuration settings`
-            }]
-          };
+    async ({ action }) => {
+      if (action === "clear") {
+        const keysCount = cache.keys().length;
+        cache.flushAll();
+        return {
+          content: [{
+            type: "text",
+            text: `Cache cleared successfully. ${keysCount} entries removed.`
+          }]
+        };
+      } else { // stats
+        const stats = cache.getStats();
+        const keys = cache.keys();
+        const keysByType = keys.reduce((acc: Record<string, number>, key: string) => {
+          const type = key.startsWith('/lifelogs/') 
+            ? (key.includes('includeMarkdown=true') ? 'full_lifelog' : 'lifelog_metadata')
+            : (key.startsWith('/lifelogs') ? 'lifelog_listings' : 'other');
+          acc[type] = (acc[type] || 0) + 1;
+          return acc;
+        }, {});
+        
+        const hitRatio = stats.hits + stats.misses > 0 
+          ? ((stats.hits / (stats.hits + stats.misses)) * 100).toFixed(2)
+          : "0.00";
+        
+        return {
+          content: [{
+            type: "text",
+            text: `# Cache Statistics\n\n` +
+                  `- **Total Keys**: ${stats.keys}\n` +
+                  `- **Hits**: ${stats.hits}\n` +
+                  `- **Misses**: ${stats.misses}\n` +
+                  `- **Hit Ratio**: ${hitRatio}%\n\n` +
+                  `## Keys by Type\n\n` +
+                  Object.entries(keysByType).map(([type, count]) => `- **${type}**: ${count}`).join('\n') +
+                  `\n\n_Use action="clear" to clear the cache._`
+          }]
+        };
       }
     }
   );
@@ -487,7 +235,7 @@ Cache TTL Multipliers:
       includeContent: z.boolean().default(false).describe("Whether to include markdown content"),
       fields: z.array(z.string()).optional().describe("Specific fields to include (title, time, id, etc.)")
     },
-    async ({ limit = DEFAULT_PAGE_SIZE, date, timezone, start, end, direction, includeContent, fields }) => {
+    async ({ limit = 10, date, timezone, start, end, direction, includeContent, fields }) => {
       // Set up query parameters with selective field retrieval
       const queryParams: Record<string, unknown> = {
         limit, 
@@ -553,7 +301,7 @@ Cache TTL Multipliers:
       includeContent: z.boolean().default(false).describe("Whether to include markdown content"),
       fields: z.array(z.string()).optional().describe("Specific fields to include (title, time, id, etc.)")
     },
-    async ({ cursor, limit = DEFAULT_PAGE_SIZE, date, timezone, direction, includeContent, fields }) => {
+    async ({ cursor, limit = 10, date, timezone, direction, includeContent, fields }) => {
       // Set up query parameters with selective field retrieval
       const queryParams: Record<string, unknown> = {
         cursor,
@@ -630,11 +378,12 @@ Cache TTL Multipliers:
         const lifelog = response.data.lifelog;
         
         if (!lifelog) {
-          throw new McpError(
-            ErrorCode.NotFound,
-            `No lifelog found with ID: ${id}`,
-            { id }
-          );
+          return {
+            content: [{
+              type: "text",
+              text: `No lifelog found with ID: ${id}`
+            }]
+          };
         }
         
         // Process time information
@@ -680,30 +429,14 @@ Cache TTL Multipliers:
             text: header + content
           }]
         };
-      } catch (error: unknown) {
+      } catch (error) {
         console.error(`Error fetching lifelog ${id}:`, error);
-        
-        // If it's already an McpError, rethrow it
-        if (error instanceof McpError) {
-          throw error;
-        }
-        
-        // Handle HTTP status errors
-        if (error.statusCode) {
-          if (error.statusCode === 404) {
-            throw new McpError(`Lifelog with ID ${id} not found`, ErrorCode.NotFound);
-          } else if (error.statusCode === 401 || error.statusCode === 403) {
-            throw new McpError(`Unauthorized access to Limitless API`, ErrorCode.Unauthorized);
-          } else if (error.statusCode >= 500) {
-            throw new McpError(`Limitless API service error: ${error.statusCode}`, ErrorCode.ServiceUnavailable);
-          }
-        }
-        
-        // Generic error fallback
-        throw new McpError(
-          `Error retrieving lifelog ${id}: ${error.message || 'Unknown error'}`,
-          ErrorCode.Internal
-        );
+        return {
+          content: [{
+            type: "text",
+            text: `Error retrieving lifelog ${id}. Please check if the ID is correct.`
+          }]
+        };
       }
     }
   );
@@ -720,11 +453,12 @@ Cache TTL Multipliers:
         const lifelog = response.data.lifelog;
         
         if (!lifelog) {
-          throw new McpError(
-            ErrorCode.NotFound, 
-            `No lifelog found with ID: ${id}`,
-            { id }
-          );
+          return {
+            content: [{
+              type: "text",
+              text: `No lifelog found with ID: ${id}`
+            }]
+          };
         }
         
         // Format metadata
@@ -784,31 +518,14 @@ Cache TTL Multipliers:
             text: metadata
           }]
         };
-      } catch (error: unknown) {
+      } catch (error) {
         console.error(`Error fetching lifelog metadata ${id}:`, error);
-        
-        // If it's already an McpError, rethrow it
-        if (error instanceof McpError) {
-          throw error;
-        }
-        
-        // Handle HTTP status errors
-        if (error.statusCode) {
-          if (error.statusCode === 404) {
-            throw new McpError(`Lifelog with ID ${id} not found`, ErrorCode.NotFound);
-          } else if (error.statusCode === 401 || error.statusCode === 403) {
-            throw new McpError(`Unauthorized access to Limitless API`, ErrorCode.Unauthorized);
-          } else if (error.statusCode >= 500) {
-            throw new McpError(`Limitless API service error: ${error.statusCode}`, ErrorCode.ServiceUnavailable);
-          }
-        }
-        
-        // Generic error fallback
-        throw new McpError(
-          ErrorCode.Internal,
-          `Error retrieving lifelog metadata for ${id}: ${error.message || 'Unknown error'}`,
-          { id }
-        );
+        return {
+          content: [{
+            type: "text",
+            text: `Error retrieving lifelog metadata for ${id}. Please check if the ID is correct.`
+          }]
+        };
       }
     }
   );
@@ -897,7 +614,7 @@ Cache TTL Multipliers:
             text: result
           }]
         };
-      } catch (error: unknown) {
+      } catch (error) {
         console.error(`Error filtering lifelog ${id}:`, error);
         return {
           content: [{
@@ -1012,7 +729,7 @@ Cache TTL Multipliers:
             text: transcript
           }]
         };
-      } catch (error: unknown) {
+      } catch (error) {
         console.error(`Error generating transcript for ${id}:`, error);
         return {
           content: [{
@@ -1190,7 +907,7 @@ Cache TTL Multipliers:
             text: summary
           }]
         };
-      } catch (error: unknown) {
+      } catch (error) {
         console.error(`Error generating time summary:`, error);
         return {
           content: [{
@@ -1215,15 +932,15 @@ Cache TTL Multipliers:
       searchMode: z.enum(["basic", "advanced"]).default("advanced").describe("Search mode: basic (simple contains) or advanced (with scoring)"),
       includeSnippets: z.boolean().default(true).describe("Include matching content snippets in results")
     },
-    async ({ query, limit = DEFAULT_PAGE_SIZE, date, timezone, start, end, searchMode, includeSnippets }) => {
+    async ({ query, limit = 10, date, timezone, start, end, searchMode, includeSnippets }) => {
       // First get the lifelogs based on date criteria
       const response = await call("/lifelogs", { 
-        limit: Math.min(limit * MAX_SEARCH_MULTIPLIER, MAX_LIFELOG_LIMIT), // Get more than we need to increase search chances
+        limit: Math.min(limit * 3, 25), // Get more than we need to increase search chances
         date, 
         timezone, 
         start, 
         end,
-        includeMarkdown: includeSnippets // Only include markdown content if snippets are requested
+        includeMarkdown: true
       });
       
       const logs = response.data.lifelogs || [];
@@ -1494,42 +1211,21 @@ Cache TTL Multipliers:
     },
     async ({ id, level, focus }) => {
       try {
-        // Check cache first for this summary
-        const summaryCacheKey = `summary_${id}_${level}_${focus}`;
-        const cachedSummary = cache.get<string>(summaryCacheKey);
-        
-        if (cachedSummary) {
-          console.error(`Cache hit for summary: ${summaryCacheKey}`);
-          return {
-            content: [{
-              type: "text",
-              text: cachedSummary
-            }]
-          };
-        }
-        
-        console.error(`Cache miss for summary: ${summaryCacheKey}`);
-        
         // Get the lifelog data
         const response = await call(`/lifelogs/${id}`);
         const lifelog = response.data.lifelog;
         
         if (!lifelog || !lifelog.markdown) {
-          throw new McpError(
-            ErrorCode.NotFound, 
-            `No content found for lifelog with ID: ${id}`,
-            { id }
-          );
+          return {
+            content: [{
+              type: "text",
+              text: `No content found for lifelog with ID: ${id}`
+            }]
+          };
         }
         
         // Generate the summary based on the content
         const summary = generateSummary(lifelog, level, focus);
-        
-        // Store in cache with a longer TTL since summaries are expensive to regenerate
-        // and don't change unless the underlying data changes (which is rare for lifelogs)
-        const summaryTtl = CACHE_TTL * CACHE_TTL_MULTIPLIERS.SUMMARIES;
-        cache.set(summaryCacheKey, summary, summaryTtl);
-        console.error(`Cached summary for ${id} with TTL ${summaryTtl}s`);
         
         return {
           content: [{
@@ -1537,151 +1233,19 @@ Cache TTL Multipliers:
             text: summary
           }]
         };
-      } catch (error: unknown) {
+      } catch (error) {
         console.error(`Error summarizing lifelog ${id}:`, error);
-        
-        // If it's already an McpError, rethrow it
-        if (error instanceof McpError) {
-          throw error;
-        }
-        
-        // Handle HTTP status errors
-        if (error.statusCode) {
-          if (error.statusCode === 404) {
-            throw new McpError(`Lifelog with ID ${id} not found`, ErrorCode.NotFound);
-          } else if (error.statusCode === 401 || error.statusCode === 403) {
-            throw new McpError(`Unauthorized access to Limitless API`, ErrorCode.Unauthorized);
-          } else if (error.statusCode >= 500) {
-            throw new McpError(`Limitless API service error: ${error.statusCode}`, ErrorCode.ServiceUnavailable);
-          }
-        }
-        
-        // Generic error fallback
-        throw new McpError(
-          ErrorCode.Internal,
-          `Error summarizing lifelog ${id}: ${error.message || 'Unknown error'}`,
-          { id }
-        );
+        return {
+          content: [{
+            type: "text",
+            text: `Error summarizing lifelog ${id}. Please check if the ID is correct.`
+          }]
+        };
       }
     }
   );
   
   // Multi-lifelog summarization tool
-  // Topic extraction from lifelogs
-  server.tool(
-    "extract_topics",
-    { 
-      ids: z.array(z.string()).describe("Array of lifelog IDs to analyze"),
-      maxTopics: z.number().default(10).describe("Maximum number of topics to extract"),
-      minOccurrences: z.number().default(3).describe("Minimum occurrences required to include a topic"),
-      mode: z.enum(["keywords", "phrases"]).default("keywords").describe("Extraction mode: keywords or phrases"),
-      excludeCommonWords: z.boolean().default(true).describe("Whether to exclude common English words")
-    },
-    async ({ ids, maxTopics, minOccurrences, mode, excludeCommonWords }) => {
-      if (!ids || ids.length === 0) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          "Please provide at least one lifelog ID to analyze",
-          { ids }
-        );
-      }
-      
-      try {
-        // Generate a cache key based on input parameters
-        const sortedIds = [...ids].sort().join(',');
-        const topicsCacheKey = `topics_${sortedIds}_${maxTopics}_${minOccurrences}_${mode}_${excludeCommonWords}`;
-        
-        // Check if we have cached results
-        const cachedTopics = cache.get<{
-          topics: Array<{name: string, count: number, score: number}>,
-          lifelogsCount: number
-        }>(topicsCacheKey);
-        
-        let topics: Array<{name: string, count: number, score: number}>;
-        let lifelogsCount: number;
-        
-        if (cachedTopics) {
-          console.error(`Cache hit for topics: ${topicsCacheKey}`);
-          topics = cachedTopics.topics;
-          lifelogsCount = cachedTopics.lifelogsCount;
-        } else {
-          console.error(`Cache miss for topics: ${topicsCacheKey}`);
-          
-          // Fetch all the lifelogs in parallel
-          const fetchPromises = ids.map(id => call(`/lifelogs/${id}`));
-          const responses = await Promise.all(fetchPromises);
-          
-          // Extract and validate the lifelogs
-          const lifelogs = responses
-            .map(response => response.data.lifelog)
-            .filter(log => log && log.markdown) as Lifelog[];
-          
-          if (lifelogs.length === 0) {
-            throw new McpError(
-              ErrorCode.NotFound,
-              "None of the provided lifelog IDs contained valid content.",
-              { ids }
-            );
-          }
-          
-          // Extract topics from the lifelogs
-          topics = extractTopics(lifelogs, maxTopics, minOccurrences, mode, excludeCommonWords);
-          lifelogsCount = lifelogs.length;
-          
-          // Cache the results for future use
-          // Topic extraction is computationally expensive, so cache for longer duration
-          const topicsTtl = CACHE_TTL * CACHE_TTL_MULTIPLIERS.SUMMARIES; // Use same TTL as summaries
-          cache.set(topicsCacheKey, { topics, lifelogsCount }, topicsTtl);
-          console.error(`Cached topics with TTL ${topicsTtl}s`);
-        }
-        
-        // Format the response
-        let resultText = `# Topics Extracted from ${lifelogsCount} Lifelogs\n\n`;
-        
-        if (topics.length === 0) {
-          resultText += "No significant topics were found matching the criteria.\n";
-        } else {
-          // Add metadata about the extraction
-          resultText += `## Extraction Parameters\n`;
-          resultText += `- Mode: ${mode}\n`;
-          resultText += `- Minimum occurrences: ${minOccurrences}\n`;
-          resultText += `- Common words excluded: ${excludeCommonWords ? "Yes" : "No"}\n\n`;
-          
-          // List the topics with their frequency
-          resultText += `## ${topics.length} Topics Found\n\n`;
-          
-          topics.forEach((topic, index) => {
-            resultText += `${index + 1}. **${topic.name}** - ${topic.count} occurrences\n`;
-          });
-          
-          // Add usage suggestion
-          resultText += `\n_Use these topics to guide further analysis or as search terms._`;
-        }
-        
-        return {
-          content: [{
-            type: "text",
-            text: resultText
-          }]
-        };
-      } catch (error: unknown) {
-        console.error(`Error extracting topics:`, error);
-        
-        // If it's already an McpError, rethrow it
-        if (error instanceof McpError) {
-          throw error;
-        }
-        
-        // Generic error fallback
-        throw new McpError(
-          ErrorCode.Internal,
-          `Error extracting topics: ${error.message || 'Unknown error'}`,
-          { ids }
-        );
-      }
-    }
-  );
-
   server.tool(
     "summarize_lifelogs",
     { 
@@ -1691,33 +1255,15 @@ Cache TTL Multipliers:
     },
     async ({ ids, level, combinedView }) => {
       if (!ids || ids.length === 0) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          "Please provide at least one lifelog ID to summarize.",
-          { ids }
-        );
+        return {
+          content: [{
+            type: "text",
+            text: "Please provide at least one lifelog ID to summarize."
+          }]
+        };
       }
       
       try {
-        // Generate a cache key for the multi-lifelog summary
-        const sortedIds = [...ids].sort().join(',');
-        const multiSummaryCacheKey = `multi_summary_${sortedIds}_${level}_${combinedView ? 'combined' : 'separate'}`;
-        
-        // Check cache first
-        const cachedSummary = cache.get<string>(multiSummaryCacheKey);
-        
-        if (cachedSummary) {
-          console.error(`Cache hit for multi-lifelog summary: ${multiSummaryCacheKey}`);
-          return {
-            content: [{
-              type: "text",
-              text: cachedSummary
-            }]
-          };
-        }
-        
-        console.error(`Cache miss for multi-lifelog summary: ${multiSummaryCacheKey}`);
-        
         // Fetch all the lifelogs in parallel
         const fetchPromises = ids.map(id => call(`/lifelogs/${id}`));
         const responses = await Promise.all(fetchPromises);
@@ -1728,11 +1274,12 @@ Cache TTL Multipliers:
           .filter(log => log && log.markdown) as Lifelog[];
         
         if (lifelogs.length === 0) {
-          throw new McpError(
-            ErrorCode.NotFound,
-            "None of the provided lifelog IDs contained valid content.",
-            { ids }
-          );
+          return {
+            content: [{
+              type: "text",
+              text: "None of the provided lifelog IDs contained valid content."
+            }]
+          };
         }
         
         // Sort lifelogs by time if available
@@ -1780,31 +1327,20 @@ Cache TTL Multipliers:
           });
         }
         
-        // Cache the summary results for future use
-        const summaryTtl = CACHE_TTL * CACHE_TTL_MULTIPLIERS.SUMMARIES;
-        cache.set(multiSummaryCacheKey, summaryText, summaryTtl);
-        console.error(`Cached multi-lifelog summary with TTL ${summaryTtl}s`);
-        
         return {
           content: [{
             type: "text",
             text: summaryText
           }]
         };
-      } catch (error: unknown) {
+      } catch (error) {
         console.error(`Error summarizing multiple lifelogs:`, error);
-        
-        // If it's already an McpError, rethrow it
-        if (error instanceof McpError) {
-          throw error;
-        }
-        
-        // Generic error fallback
-        throw new McpError(
-          ErrorCode.Internal,
-          `Error summarizing lifelogs: ${error.message || 'Unknown error'}`,
-          { ids }
-        );
+        return {
+          content: [{
+            type: "text",
+            text: `Error generating summaries. Please check if all IDs are correct.`
+          }]
+        };
       }
     }
   );
@@ -1833,25 +1369,22 @@ Cache TTL Multipliers:
       }
     });
     
-    if (!earliestStart) return ""; // Exit if no start date found
-    const startAsDate = earliestStart as Date; // Cast to Date
+    if (!earliestStart) return "";
     
     // Format the range
-    const startText = startAsDate.toLocaleString();
+    const startText = earliestStart.toLocaleString();
     
-    if (!latestEnd || startAsDate.getTime() === (latestEnd as Date).getTime()) {
+    if (!latestEnd || earliestStart === latestEnd) {
       return startText;
     }
     
-    const endAsDate = latestEnd as Date; // Cast to Date
-    
     // Check if same day
-    const sameDay = startAsDate.toDateString() === endAsDate.toDateString();
+    const sameDay = earliestStart.toDateString() === latestEnd.toDateString();
     
     if (sameDay) {
-      return `${startAsDate.toLocaleDateString()} from ${startAsDate.toLocaleTimeString()} to ${endAsDate.toLocaleTimeString()}`;
+      return `${earliestStart.toLocaleDateString()} from ${earliestStart.toLocaleTimeString()} to ${latestEnd.toLocaleTimeString()}`;
     } else {
-      return `${startText} to ${endAsDate.toLocaleString()}`;
+      return `${startText} to ${latestEnd.toLocaleString()}`;
     }
   }
   
@@ -1873,7 +1406,6 @@ Cache TTL Multipliers:
     // Extract different types of content based on focus
     const text = lifelog.markdown;
     const lines = text.split('\n');
-    const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0); // Define sentences here
     
     // Different strategies based on level of detail
     if (level === "brief") {
@@ -1940,7 +1472,7 @@ Cache TTL Multipliers:
             
             if (keyPointSentences.length > 0) {
               keyPointSentences.slice(0, 5).forEach(sentence => {
-                summary += `- ${sentence.trim()}\n`; // Removed extra period
+                summary += `- ${sentence.trim()}.\n`;
               });
             } else {
               // Fall back to first few paragraphs
@@ -1954,6 +1486,7 @@ Cache TTL Multipliers:
           
           // Look for sentences that indicate decisions
           const decisionPhrases = ["decided", "agreed", "concluded", "determined", "resolved", "approved", "finalized"];
+          const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0);
           
           const decisionSentences = sentences.filter(sentence => 
             decisionPhrases.some(phrase => sentence.toLowerCase().includes(phrase))
@@ -1961,7 +1494,7 @@ Cache TTL Multipliers:
           
           if (decisionSentences.length > 0) {
             decisionSentences.forEach(sentence => {
-              summary += `- ${sentence.trim()}\n`; // Removed extra period
+              summary += `- ${sentence.trim()}.\n`;
             });
           } else {
             summary += "No explicit decisions were identified in this content.\n";
@@ -1976,7 +1509,7 @@ Cache TTL Multipliers:
           
           if (questions.length > 0) {
             questions.forEach(question => {
-              summary += `- ${question.trim()}\n`; // Removed extra question mark
+              summary += `- ${question.trim()}?\n`;
             });
           } else {
             summary += "No explicit questions were identified in this content.\n";
@@ -1995,7 +1528,7 @@ Cache TTL Multipliers:
           
           if (actionSentences.length > 0) {
             actionSentences.forEach(sentence => {
-              summary += `- ${sentence.trim()}\n`; // Removed extra period
+              summary += `- ${sentence.trim()}.\n`;
             });
           } else {
             summary += "No explicit action items were identified in this content.\n";
@@ -2398,7 +1931,7 @@ Cache TTL Multipliers:
             text: resultText
           }]
         };
-      } catch (error: unknown) {
+      } catch (error) {
         console.error(`Error extracting topics:`, error);
         return {
           content: [{
@@ -2651,7 +2184,7 @@ Cache TTL Multipliers:
             text: resultText
           }]
         };
-      } catch (error: unknown) {
+      } catch (error) {
         console.error(`Error analyzing sentiment for lifelog ${id}:`, error);
         return {
           content: [{
@@ -2828,7 +2361,7 @@ Cache TTL Multipliers:
             text: resultText
           }]
         };
-      } catch (error: unknown) {
+      } catch (error) {
         console.error(`Error comparing sentiment:`, error);
         return {
           content: [{
@@ -3022,24 +2555,13 @@ Cache TTL Multipliers:
   }
   
   // ──────────────────────────────────────────────────────────────────────────────
-  // 4. Initialize plugins
-  // ──────────────────────────────────────────────────────────────────────────────
-  try {
-    // Plugin system is initialized with the server instance
-    await initializePlugins(server);
-    console.error("Plugins initialized successfully");
-  } catch (error: unknown) {
-    console.error("Error initializing plugins:", error);
-  }
-  
-  // ──────────────────────────────────────────────────────────────────────────────
-  // 5. Start the server over stdio (Claude / VS Code / etc. expect this)
+  // 4. Start the server over stdio (Claude / VS Code / etc. expect this)
   // ──────────────────────────────────────────────────────────────────────────────
   try {
     await server.connect(new StdioServerTransport());
     // Log to stderr instead of stdout to avoid interfering with JSON communication
     console.error("Server connected successfully");
-  } catch (error: unknown) {
+  } catch (error) {
     console.error("Failed to connect server:", error);
     process.exit(1);
   }

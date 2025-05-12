@@ -1,92 +1,293 @@
-# Limitless MCP Project Map
+# Limitless MCP Project Structure
 
-## Overview
-Limitless MCP is a server implementation of the Model Context Protocol (MCP) that provides AI assistants like Claude with access to Limitless API data from a user's Pendant device. The server acts as a bridge between AI systems and personal data collected via the Limitless Pendant.
+This document provides an overview of the project structure and code organization in Limitless MCP.
 
-## Architecture
-
-### Core Components
-- **MCP Server**: Implements the Model Context Protocol for communication with AI assistants.
-- **Limitless API Client**: Handles authentication and data retrieval from the Limitless API.
-- **Resource System**: Provides virtual resources (files) that Claude can read.
-- **Tool System**: Provides callable functions that Claude can use to query and manipulate data.
-
-### Technical Decisions
-1. Built on TypeScript with ES module support for better type safety and modern JavaScript features.
-2. Uses the official MCP SDK for reliable protocol compatibility.
-3. Communicates over stdio for compatibility with Claude Desktop and other MCP-compatible clients.
-4. Error messages and logs are directed to stderr to avoid interfering with the JSON protocol.
-
-## Resources
-- `lifelogs://{id}` - Virtual resource that returns the markdown content of a lifelog when read.
-
-## Tools
-
-### Data Retrieval Tools
-- `list_lifelogs` - Lists lifelogs with enhanced filtering options (date, timezone, pagination).
-- `get_paged_lifelogs` - Handles pagination for larger result sets via cursor.
-- `search_lifelogs` - Searches lifelogs by text content with date filtering.
-- `get_lifelog` - Retrieves a complete lifelog by ID.
-- `get_lifelog_metadata` - Retrieves only metadata about a lifelog for quicker operations.
-
-### Data Analysis Tools
-- `get_day_summary` - Provides a formatted summary of a specific day's lifelogs.
-- `get_time_summary` - Generates time-based statistics and analysis of lifelogs (counts, durations, etc.).
-
-### Content Processing Tools
-- `filter_lifelog_contents` - Filters lifelog content by speaker, content type, or time range.
-- `generate_transcript` - Creates formatted transcripts in various styles (simple, detailed, dialogue).
-
-## Configuration
-- Reads the Limitless API key from the `LIMITLESS_API_KEY` environment variable.
-- Supports various date formats and timezones for flexible querying.
-- Configurable result limits for tools that return multiple items.
-
-## API Integration
-- Primary endpoint: `https://api.limitless.ai/v1/lifelogs`
-- Authentication via `X-API-Key` header
-- Support for query parameters:
-  - Basic: date, timezone
-  - Advanced: cursor, start/end times, direction, includeMarkdown
-- Individual lifelog retrieval via `/lifelogs/{id}`
-
-## Future Development
-1. Additional endpoints as they become available in the Limitless API
-2. Enhanced caching for frequently accessed data
-3. LLM fine-tuning integration for personalized AI experiences
-4. Real-time notifications of new Pendant recordings
-
-## Version History
-- v0.1.0 - Initial implementation with basic functionality
-- v0.2.x - Enhanced filtering, better error handling, full lifelog retrieval
-- v0.3.0 - Added pagination, transcript generation, content filtering, time analysis, and metadata tools
-
-## Project Structure
+## Directory Structure
 
 ```
-limitless-mcp/
-├── src/                  # Source code
-│   └── index.ts          # Main server implementation
-├── dist/                 # Compiled JavaScript output
-├── docs/                 # Documentation
-│   ├── README.md         # General usage documentation
-│   ├── CHANGELOG.md      # Version history
-│   └── project-map.md    # This file
-├── package.json          # Project metadata and dependencies
-└── tsconfig.json         # TypeScript configuration
+/
+├── dist/             # Compiled JavaScript files
+├── docs/             # Documentation
+│   ├── CHANGELOG.md  # Version history and changes
+│   ├── README.md     # Documentation index
+│   ├── examples.md   # Detailed usage examples
+│   ├── plugins.md    # Plugin documentation
+│   └── project-map.md# This file (project structure)
+├── src/              # Source code
+│   ├── api/          # API client modules
+│   │   └── client.ts # Limitless API client
+│   ├── cache/        # Caching system
+│   │   └── index.ts  # Cache implementation
+│   ├── config.ts     # Configuration module
+│   ├── main.ts       # Main entry point
+│   ├── plugins/      # Plugin system
+│   │   ├── content-processor.ts # Content processing plugin
+│   │   ├── custom-example.ts    # Example custom plugin
+│   │   ├── decorator.ts         # Template decorator plugin
+│   │   ├── index.ts             # Plugin registry
+│   │   ├── semantic-search.ts   # Semantic search plugin
+│   │   ├── time-parser.ts       # Time reference parser plugin
+│   │   └── types.ts             # Plugin type definitions
+│   ├── tools/        # MCP tool implementations
+│   │   ├── analysis-tools.ts    # Summarization and topic extraction
+│   │   ├── cache-tools.ts       # Cache management tools
+│   │   ├── index.ts             # Tools registry
+│   │   └── lifelog-tools.ts     # Basic lifelog retrieval tools
+│   ├── types/        # Type definitions
+│   │   └── index.ts  # Common types
+│   └── utils/        # Utility functions
+│       └── index.ts  # Common utility functions
+├── .gitignore        # Git ignore file
+├── LICENSE           # MIT license
+├── package.json      # NPM package definition
+├── README.md         # Project README
+└── tsconfig.json     # TypeScript configuration
 ```
 
-## Dependencies
+## Key Modules
 
-- **@modelcontextprotocol/sdk**: Core MCP SDK for server implementation.
-- **undici**: Used for HTTP requests to the Limitless API.
-- **zod**: Schema validation for tool parameters.
-- **typescript**: Development dependency for TypeScript compilation.
+### Entry Point
 
-## Future Enhancements
+**`src/main.ts`**
 
-- Support for additional Limitless API endpoints as they become available
-- Enhanced search capabilities with fuzzy matching or semantic search
-- Improved caching for better performance
-- Additional MCP tools for specific use cases
-- Support for cross-lifelog analysis and summarization 
+The main entry point initializes the MCP server, registers resources and tools, and starts the server.
+
+Key functions:
+- `main()`: The main function that sets up and runs the server
+
+### Configuration
+
+**`src/config.ts`**
+
+Loads and validates configuration from environment variables with sensible defaults.
+
+Key exports:
+- `config`: The configuration object with all settings
+- `logConfig()`: Function to log the current configuration
+
+### API Client
+
+**`src/api/client.ts`**
+
+Provides a robust client for the Limitless API with error handling, retries, and caching.
+
+Key exports:
+- `callLimitlessApi(path, qs, useCache)`: Function to call the Limitless API
+
+### Cache System
+
+**`src/cache/index.ts`**
+
+Manages the caching system for API responses and computed data.
+
+Key exports:
+- `cache`: The NodeCache instance
+- `calculateTTL(path, queryParams)`: Calculate appropriate TTL based on data type
+- `getCacheTags(path, queryParams)`: Get tags for a cache entry
+
+### Tools
+
+**`src/tools/index.ts`**
+
+Registers all MCP tools and resources.
+
+Key exports:
+- `registerAllTools(server)`: Register all tools with the MCP server
+- `registerResources(server)`: Register resource endpoints
+
+**`src/tools/lifelog-tools.ts`**
+
+Basic lifelog listing and retrieval tools.
+
+Key functions:
+- `registerLifelogTools(server)`: Register lifelog tools
+
+**`src/tools/analysis-tools.ts`**
+
+Advanced analysis tools like summarization and topic extraction.
+
+Key functions:
+- `registerAnalysisTools(server)`: Register analysis tools
+
+**`src/tools/cache-tools.ts`**
+
+Cache management tools.
+
+Key functions:
+- `registerCacheTools(server)`: Register cache management tools
+
+### Plugins
+
+**`src/plugins/index.ts`**
+
+Plugin registry and initialization.
+
+Key exports:
+- `registry`: The plugin registry instance
+- `initializePlugins(server)`: Initialize all enabled plugins
+
+**`src/plugins/types.ts`**
+
+Plugin type definitions.
+
+Key interfaces:
+- `LimitlessPlugin`: Interface that all plugins must implement
+- `PluginRegistrationOptions`: Options for plugin registration
+
+### Utilities
+
+**`src/utils/index.ts`**
+
+Common utility functions.
+
+Key functions:
+- `extractTopics(lifelogs, maxTopics, minOccurrences, mode, excludeCommonWords)`: Extract topics from lifelogs
+- `generateSummary(lifelog, level, focus)`: Generate a summary for a lifelog
+- `generateCombinedSummary(lifelogs, level)`: Generate a combined summary for multiple lifelogs
+- `getTimeRangeText(lifelogs)`: Generate a time range description
+
+### Types
+
+**`src/types/index.ts`**
+
+Common type definitions.
+
+Key interfaces:
+- `Lifelog`: Interface for a lifelog
+- `LifelogContent`: Interface for lifelog content blocks
+- `LifelogResponse`: Interface for Limitless API responses
+- `LimitlessConfig`: Interface for configuration
+- `Topic`: Interface for extracted topics
+
+## Plugin System
+
+The plugin system allows extending Limitless MCP with custom functionality:
+
+1. Plugins implement the `LimitlessPlugin` interface
+2. The plugin registry manages plugin lifecycle
+3. Plugins are initialized with the server instance when it starts
+4. Each plugin can register its own tools and resources
+
+## Development Workflow
+
+1. **Setup**: Clone the repository and install dependencies
+   ```bash
+   git clone https://github.com/jakerains/limitless-mcp.git
+   cd limitless-mcp
+   npm install
+   ```
+
+2. **Development**: Use the dev script to run with auto-reload
+   ```bash
+   npm run dev
+   ```
+
+3. **Build**: Compile TypeScript code to JavaScript
+   ```bash
+   npm run build
+   ```
+
+4. **Test**: Run the server with your API key
+   ```bash
+   LIMITLESS_API_KEY="your-api-key" npm start
+   ```
+
+## Adding a New Tool
+
+To add a new tool:
+
+1. Choose the appropriate module in `src/tools/` or create a new one
+2. Create a function to register your tool
+3. Call `server.tool()` with name, schema, and handler
+4. Add your registration function to `registerAllTools()` in `src/tools/index.ts`
+
+Example:
+```typescript
+// In src/tools/my-tools.ts
+export function registerMyTools(server: McpServer): void {
+  server.tool(
+    "my_custom_tool",
+    { 
+      param1: z.string().describe("Parameter description"),
+      param2: z.number().optional().describe("Optional parameter")
+    },
+    async ({ param1, param2 }) => {
+      // Implement tool logic
+      return {
+        content: [{
+          type: "text",
+          text: `Result for ${param1}`
+        }]
+      };
+    }
+  );
+}
+
+// In src/tools/index.ts
+import { registerMyTools } from "./my-tools";
+
+export function registerAllTools(server: McpServer): void {
+  // ...existing registrations
+  registerMyTools(server);
+}
+```
+
+## Creating a New Plugin
+
+To create a custom plugin:
+
+1. Create a new file in `src/plugins/`
+2. Implement the `LimitlessPlugin` interface
+3. Register your plugin in `src/plugins/index.ts`
+
+Example:
+```typescript
+// In src/plugins/my-plugin.ts
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { LimitlessPlugin } from "./types";
+
+export class MyPlugin implements LimitlessPlugin {
+  name = "my-plugin";
+  description = "My custom plugin for Limitless MCP";
+  version = "1.0.0";
+  
+  async initialize(server: McpServer, config: Record<string, any>): Promise<void> {
+    // Register tools or resources
+    server.tool(
+      "my_plugin_tool",
+      { /* schema */ },
+      async (params) => {
+        // Implementation
+        return { content: [{ type: "text", text: "Result" }] };
+      }
+    );
+  }
+}
+
+// In src/plugins/index.ts
+import { MyPlugin } from "./my-plugin.js";
+
+// Add to availablePlugins array
+const availablePlugins: Array<new () => LimitlessPlugin> = [
+  // ...existing plugins
+  MyPlugin
+];
+```
+
+## Making Configuration Changes
+
+To add new configuration options:
+
+1. Update `src/config.ts` with your new options and default values
+2. Update the `LimitlessConfig` interface in `src/types/index.ts`
+3. Document the new options in the README.md
+
+## Documentation
+
+When making changes, be sure to update the relevant documentation:
+
+- `README.md`: Main documentation
+- `docs/CHANGELOG.md`: Version history
+- `docs/examples.md`: Usage examples
+- `docs/plugins.md`: Plugin documentation
+- `docs/project-map.md`: This file (update when structure changes)
