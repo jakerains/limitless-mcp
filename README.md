@@ -8,7 +8,7 @@
 
 Limitless MCP is a server implementation of the [Model Context Protocol](https://github.com/modelcontextprotocol/mcp) that provides seamless access to your Limitless API data for AI assistants like Claude.
 
-![Limitless MCP Demo](https://www.limitless.ai/developers/img/developer-api.png)
+<img src="https://app.limitless.ai/limitless-opengraph.jpg" alt="Limitless Logo" width="400" />
 
 ## ✨ Features
 
