@@ -1,6 +1,6 @@
 {
     "name": "limitless-mcp",
-    "version": "0.5.2",
+    "version": "0.5.3",
     "description": "MCP server for Limitless API - Connect your Pendant data to Claude and other LLMs",
     "type": "module",
     "bin": {
@@ -9,11 +9,13 @@
     "main": "./dist/main.js",
     "files": [
         "dist",
-        "bin"
+        "bin",
+        "scripts"
     ],
     "scripts": {
         "build": "tsc --noEmitOnError false && node scripts/fix-imports.js",
         "build:force": "tsc || true",
+        "postbuild:force": "node scripts/fix-imports.js",
         "prepare": "npm run build:force",
         "start": "node dist/main.js",
         "dev": "tsx src/main.ts"

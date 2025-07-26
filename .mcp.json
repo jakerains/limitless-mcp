@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "limitless-mcp": {
+      "command": "node",
+      "args": ["bin/limitless-mcp.js"],
+      "env": {
+        "LIMITLESS_API_KEY": "53d7793f-2e9f-4db2-883c-1cd490eeba5b"
+      }
+    }
+  }
+}
