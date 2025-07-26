@@ -2,7 +2,7 @@
  * Cache management module for Limitless MCP server
  */
 import NodeCache from 'node-cache';
-import config from '../config';
+import config from '../config.js';
 // Initialize cache with configuration settings
 const cache = new NodeCache({
     stdTTL: config.CACHE_TTL,

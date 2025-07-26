@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { McpError, ErrorCode, getErrorStatusCode, getErrorMessage, enhanceError } from './utils/errors';
+import { McpError, ErrorCode, getErrorStatusCode, getErrorMessage, enhanceError } from './utils/errors.js';
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { request } from "undici";
 import { z } from "zod";

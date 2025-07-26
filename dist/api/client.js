@@ -2,9 +2,9 @@
  * API client for the Limitless API
  */
 import { request } from 'undici';
-import { McpError, ErrorCode } from '../utils/errors';
-import config from '../config';
-import cache, { calculateTTL, getCacheTags } from '../cache';
+import { McpError, ErrorCode } from '../utils/errors.js';
+import config from '../config.js';
+import cache, { calculateTTL, getCacheTags } from '../cache/index.js';
 /**
  * Build a cache key from a path and query parameters
  */

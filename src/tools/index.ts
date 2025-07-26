@@ -2,10 +2,10 @@
  * Tools registry for Limitless MCP
  */
 import { McpServer, ResourceTemplate, ResourceMetadata } from "@modelcontextprotocol/sdk/server/mcp.js";
-import callLimitlessApi from "../api/client";
-import { registerCacheTools } from "./cache-tools";
-import { registerLifelogTools } from "./lifelog-tools";
-import { registerAnalysisTools } from "./analysis-tools";
+import callLimitlessApi from "../api/client.js";
+import { registerCacheTools } from "./cache-tools.js";
+import { registerLifelogTools } from "./lifelog-tools.js";
+import { registerAnalysisTools } from "./analysis-tools.js";
 
 /**
  * Register all tools with the MCP server

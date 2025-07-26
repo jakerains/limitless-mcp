@@ -1,9 +1,9 @@
-import { McpError, ErrorCode, getErrorStatusCode, getErrorMessage } from '../utils/errors';
+import { McpError, ErrorCode, getErrorStatusCode, getErrorMessage } from '../utils/errors.js';
 import { z } from "zod";
-import callLimitlessApi from "../api/client";
-import cache from "../cache";
-import config from "../config";
-import { generateSummary, generateCombinedSummary, extractTopics, getTimeRangeText } from "../utils";
+import callLimitlessApi from "../api/client.js";
+import cache from "../cache/index.js";
+import config from "../config.js";
+import { generateSummary, generateCombinedSummary, extractTopics, getTimeRangeText } from "../utils/index.js";
 /**
  * Register analysis tools on the MCP server
  */

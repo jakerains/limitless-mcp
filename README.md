@@ -29,7 +29,10 @@ Limitless MCP is a server implementation of the [Model Context Protocol](https:/
 
 ## 📋 Prerequisites
 
-- Node.js 18 or higher (required for fetch API used by the client)
+- **Node.js 18 or higher** (required for native fetch API and ReadableStream support)
+  - ⚠️ **Important**: Node.js 16 and below are NOT supported
+  - To check your version: `node --version`
+  - To upgrade: Visit [nodejs.org](https://nodejs.org/) or use [nvm](https://github.com/nvm-sh/nvm)
 - A [Limitless](https://www.limitless.ai/) account with a paired Pendant
 - A [Limitless API key](https://www.limitless.ai/developers) (available to Pendant owners)
 

@@ -1,7 +1,7 @@
-import { McpError, ErrorCode } from '../utils/errors';
+import { McpError, ErrorCode } from '../utils/errors.js';
 import { z } from "zod";
-import cache from "../cache";
-import config from "../config";
+import cache from "../cache/index.js";
+import config from "../config.js";
 /**
  * Register cache management tools on the MCP server
  */

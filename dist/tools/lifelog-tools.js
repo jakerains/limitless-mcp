@@ -1,7 +1,7 @@
-import { McpError, ErrorCode, getErrorStatusCode, getErrorMessage } from '../utils/errors';
+import { McpError, ErrorCode, getErrorStatusCode, getErrorMessage } from '../utils/errors.js';
 import { z } from "zod";
-import callLimitlessApi from "../api/client";
-import config from "../config";
+import callLimitlessApi from "../api/client.js";
+import config from "../config.js";
 /**
  * Register lifelog listing and retrieval tools on the MCP server
  */

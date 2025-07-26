@@ -6,9 +6,9 @@
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import config, { logConfig } from "./config";
+import config, { logConfig } from "./config.js";
 import { initializePlugins } from "./plugins/index.js";
-import { registerAllTools, registerResources } from "./tools";
+import { registerAllTools, registerResources } from "./tools/index.js";
 
 /**
  * Main function that runs the MCP server
