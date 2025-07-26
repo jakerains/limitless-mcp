@@ -1,6 +1,6 @@
 {
     "name": "limitless-mcp",
-    "version": "0.5.0",
+    "version": "0.5.1",
     "description": "MCP server for Limitless API - Connect your Pendant data to Claude and other LLMs",
     "type": "module",
     "bin": {

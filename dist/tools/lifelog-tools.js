@@ -1,4 +1,4 @@
-import { McpError, ErrorCode } from '../utils/errors';
+import { McpError, ErrorCode, getErrorStatusCode, getErrorMessage } from '../utils/errors';
 import { z } from "zod";
 import callLimitlessApi from "../api/client";
 import config from "../config";
@@ -181,19 +181,20 @@ export function registerLifelogTools(server) {
                 throw error;
             }
             // Handle HTTP status errors
-            if (error.statusCode) {
-                if (error.statusCode === 404) {
+            const statusCode = getErrorStatusCode(error);
+            if (statusCode) {
+                if (statusCode === 404) {
                     throw new McpError(`Lifelog with ID ${id} not found`, ErrorCode.NotFound);
                 }
-                else if (error.statusCode === 401 || error.statusCode === 403) {
+                else if (statusCode === 401 || statusCode === 403) {
                     throw new McpError(`Unauthorized access to Limitless API`, ErrorCode.Unauthorized);
                 }
-                else if (error.statusCode >= 500) {
-                    throw new McpError(`Limitless API service error: ${error.statusCode}`, ErrorCode.ServiceUnavailable);
+                else if (statusCode >= 500) {
+                    throw new McpError(`Limitless API service error: ${statusCode}`, ErrorCode.ServiceUnavailable);
                 }
             }
             // Generic error fallback
-            throw new McpError(`Error retrieving lifelog ${id}: ${error.message || 'Unknown error'}`, ErrorCode.Internal);
+            throw new McpError(`Error retrieving lifelog ${id}: ${getErrorMessage(error)}`, ErrorCode.Internal);
         }
     });
     // Get only metadata for a lifelog
@@ -262,19 +263,20 @@ export function registerLifelogTools(server) {
                 throw error;
             }
             // Handle HTTP status errors
-            if (error.statusCode) {
-                if (error.statusCode === 404) {
+            const statusCode = getErrorStatusCode(error);
+            if (statusCode) {
+                if (statusCode === 404) {
                     throw new McpError(`Lifelog with ID ${id} not found`, ErrorCode.NotFound);
                 }
-                else if (error.statusCode === 401 || error.statusCode === 403) {
+                else if (statusCode === 401 || statusCode === 403) {
                     throw new McpError(`Unauthorized access to Limitless API`, ErrorCode.Unauthorized);
                 }
-                else if (error.statusCode >= 500) {
-                    throw new McpError(`Limitless API service error: ${error.statusCode}`, ErrorCode.ServiceUnavailable);
+                else if (statusCode >= 500) {
+                    throw new McpError(`Limitless API service error: ${statusCode}`, ErrorCode.ServiceUnavailable);
                 }
             }
             // Generic error fallback
-            throw new McpError(`Error retrieving lifelog metadata for ${id}: ${error.message || 'Unknown error'}`, ErrorCode.Internal);
+            throw new McpError(`Error retrieving lifelog metadata for ${id}: ${getErrorMessage(error)}`, ErrorCode.Internal);
         }
     });
 }

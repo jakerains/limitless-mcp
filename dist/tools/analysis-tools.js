@@ -1,4 +1,4 @@
-import { McpError, ErrorCode } from '../utils/errors';
+import { McpError, ErrorCode, getErrorStatusCode, getErrorMessage } from '../utils/errors';
 import { z } from "zod";
 import callLimitlessApi from "../api/client";
 import cache from "../cache";
@@ -55,19 +55,20 @@ export function registerAnalysisTools(server) {
                 throw error;
             }
             // Handle HTTP status errors
-            if (error.statusCode) {
-                if (error.statusCode === 404) {
+            const statusCode = getErrorStatusCode(error);
+            if (statusCode) {
+                if (statusCode === 404) {
                     throw new McpError(`Lifelog with ID ${id} not found`, ErrorCode.NotFound);
                 }
-                else if (error.statusCode === 401 || error.statusCode === 403) {
+                else if (statusCode === 401 || statusCode === 403) {
                     throw new McpError(`Unauthorized access to Limitless API`, ErrorCode.Unauthorized);
                 }
-                else if (error.statusCode >= 500) {
-                    throw new McpError(`Limitless API service error: ${error.statusCode}`, ErrorCode.ServiceUnavailable);
+                else if (statusCode >= 500) {
+                    throw new McpError(`Limitless API service error: ${statusCode}`, ErrorCode.ServiceUnavailable);
                 }
             }
             // Generic error fallback
-            throw new McpError(`Error summarizing lifelog ${id}: ${error.message || 'Unknown error'}`, ErrorCode.Internal);
+            throw new McpError(`Error summarizing lifelog ${id}: ${getErrorMessage(error)}`, ErrorCode.Internal);
         }
     });
     // Multi-lifelog summarization tool
@@ -161,7 +162,7 @@ export function registerAnalysisTools(server) {
                 throw error;
             }
             // Generic error fallback
-            throw new McpError(ErrorCode.Internal, `Error summarizing lifelogs: ${error.message || 'Unknown error'}`, { ids });
+            throw new McpError(ErrorCode.Internal, `Error summarizing lifelogs: ${getErrorMessage(error)}`, { ids });
         }
     });
     // Topic extraction from lifelogs
@@ -242,7 +243,7 @@ export function registerAnalysisTools(server) {
                 throw error;
             }
             // Generic error fallback
-            throw new McpError(ErrorCode.Internal, `Error extracting topics: ${error.message || 'Unknown error'}`, { ids });
+            throw new McpError(ErrorCode.Internal, `Error extracting topics: ${getErrorMessage(error)}`, { ids });
         }
     });
 }

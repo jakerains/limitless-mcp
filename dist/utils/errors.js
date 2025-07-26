@@ -36,3 +36,51 @@ export class McpError extends Error {
         }
     }
 }
+/**
+ * Type guard to check if an unknown error has API error properties
+ */
+export function isApiError(error) {
+    return (typeof error === 'object' &&
+        error !== null &&
+        (('statusCode' in error) ||
+            ('response' in error && typeof error.response === 'object' && error.response !== null) ||
+            ('message' in error && typeof error.message === 'string')));
+}
+/**
+ * Safely get status code from an unknown error
+ */
+export function getErrorStatusCode(error) {
+    if (!isApiError(error))
+        return undefined;
+    // Direct statusCode property
+    if (error.statusCode)
+        return error.statusCode;
+    // Nested in response
+    if (error.response?.statusCode)
+        return error.response.statusCode;
+    return undefined;
+}
+/**
+ * Safely get error message from an unknown error
+ */
+export function getErrorMessage(error) {
+    if (!isApiError(error))
+        return 'Unknown error';
+    return error.message || 'Unknown error';
+}
+/**
+ * Enhance an unknown error with API error properties
+ */
+export function enhanceError(error) {
+    if (!isApiError(error)) {
+        return { message: String(error) };
+    }
+    // Add statusCode from response if needed
+    if (!error.statusCode && error.response?.statusCode) {
+        return {
+            ...error,
+            statusCode: error.response.statusCode
+        };
+    }
+    return error;
+}
